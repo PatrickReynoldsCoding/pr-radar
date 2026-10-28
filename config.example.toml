@@ -1,0 +1,39 @@
+# Copy to ~/.config/pr-radar/config.toml (scripts/install.sh does this for you).
+# This file stays on your Mac. Never commit your own copy.
+
+port = 4747
+
+[github]
+# Only PRs in these orgs. Leave empty for all orgs.
+orgs = []
+# A command that prints a GitHub token. `gh auth token` uses your GitHub CLI login.
+token_command = "gh auth token"
+poll_seconds = 120
+# true: also show reviews requested from a team you are in (can be noisy).
+include_team_review_requests = false
+
+[alerts]
+# Send "still waiting on you" again after this many minutes.
+realert_minutes = 30
+# A PR with no activity for this many days is "gone quiet".
+stale_days = 3
+# Mac alerts only on these days (0 = Monday) and between these times.
+work_days = [0, 1, 2, 3, 4]
+work_start = 09:00:00
+work_end = 18:00:00
+morning_summary_at = 09:15:00
+sound = "default"
+
+[privacy]
+# The tests fail if any of these words appear in the repo. Put your employer and org names here.
+forbidden_words = []
+
+# Optional: show Jira ticket status next to each PR.
+# Keys are found in the PR title and branch name (for example ABC-123).
+# [jira]
+# base_url = "https://your-site.atlassian.net"
+# email = "you@example.com"
+# Store the API token in the macOS keychain:
+#   security add-generic-password -s pr-radar-jira -a "$USER" -w
+# token_command = "security find-generic-password -s pr-radar-jira -w"
+# project_keys = ["ABC"]

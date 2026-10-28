@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PR Radar</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">📡 PR Radar</div>
+    <div class="status" id="status">Loading…</div>
+    <div class="actions">
+      <button id="focus-button" class="button" type="button">🎯 Focus</button>
+      <button id="report-button" class="button" type="button">📋 Weekly report</button>
+      <button id="refresh-button" class="button" type="button">🔄 Check now</button>
+      <button id="feed-button" class="button bell" type="button" aria-label="Updates">
+        🔔 <span id="unread" class="badge" hidden>0</span>
+      </button>
+    </div>
+  </header>
+
+  <div id="focus-banner" class="focus-banner" hidden></div>
+  <div id="error-banner" class="error-banner" hidden></div>
+
+  <main>
+    <section id="next-up" class="next-up" aria-live="polite"></section>
+    <section id="summary" class="summary"></section>
+
+    <section class="group" data-bucket="needs_you">
+      <h2>🔴 Needs you</h2>
+      <div class="cards" id="bucket-needs_you"></div>
+    </section>
+    <section class="group" data-bucket="easy_win">
+      <h2>🚀 Easy wins</h2>
+      <div class="cards" id="bucket-easy_win"></div>
+    </section>
+    <details class="group" data-bucket="waiting">
+      <summary><h2>⏳ Waiting on others <span id="waiting-count" class="muted"></span></h2></summary>
+      <div class="cards" id="bucket-waiting"></div>
+    </details>
+    <section class="group" id="snoozed-group" hidden>
+      <h2>😴 Snoozed</h2>
+      <div class="cards" id="bucket-snoozed"></div>
+    </section>
+
+    <footer class="footer">
+      <button id="test-alert-button" class="link-button" type="button">Send a test Mac alert</button>
+    </footer>
+  </main>
+
+  <aside id="feed" class="feed" hidden>
+    <div class="feed-head">
+      <h2>Updates</h2>
+      <button id="read-all-button" class="link-button" type="button">Mark all as read</button>
+      <button id="feed-close" class="icon-button" type="button" aria-label="Close">✕</button>
+    </div>
+    <ol id="feed-list" class="feed-list"></ol>
+  </aside>
+
+  <div id="toasts" class="toasts" aria-live="assertive"></div>
+
+  <dialog id="focus-dialog" class="dialog">
+    <h2>🎯 Focus time</h2>
+    <p>I will hold all Mac alerts until the time is over. Then I will send you one summary.</p>
+    <div class="dialog-actions">
+      <button class="button primary" data-minutes="25" type="button">25 min</button>
+      <button class="button primary" data-minutes="50" type="button">50 min</button>
+      <button class="button primary" data-minutes="90" type="button">90 min</button>
+      <button class="button" data-close type="button">Cancel</button>
+    </div>
+  </dialog>
+
+  <dialog id="report-dialog" class="dialog wide">
+    <h2>📋 What I shipped this week</h2>
+    <p class="muted">Copy this into your 1:1 notes.</p>
+    <pre id="report-text" class="report">Loading…</pre>
+    <div class="dialog-actions">
+      <button id="copy-report" class="button primary" type="button">Copy</button>
+      <button class="button" data-close type="button">Close</button>
+    </div>
+  </dialog>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
