@@ -20,6 +20,8 @@ It runs on your Mac. It shows a web page, sends Mac alerts that stay on screen, 
 - **Reminders.** If a PR still needs you after 30 minutes, you get another alert. Snooze a PR to stop it.
 - **Focus mode.** Hold all alerts for 25, 50 or 90 minutes. You get one summary at the end.
 - **Work hours.** Mac alerts only come on work days, in work hours.
+- **Fast sync that is safe for your GitHub limit.** A quick check every 10 seconds asks "did any PR change?". A full check runs only when something changed, and every 5 minutes as a safety check. Change both speeds in **⚙️ Settings** on the page, or pick a speed in the menu bar under **Sync speed**. The page shows how many GitHub points your choice uses. If points get low, PR Radar slows down by itself.
+- **Sync now** in the page and in the menu bar.
 - **Morning summary.** One alert each work day with what needs you today.
 - **Weekly report.** "What I shipped" in Markdown (merged, reviewed, opened, still open). Copy it into your 1:1 notes.
 - **Jira status** next to each PR (optional).
@@ -53,7 +55,9 @@ macOS has two alert styles: **Banners** go away by themselves. **Alerts** stay u
 
 ## Settings
 
-All settings are in `~/.config/pr-radar/config.toml`. See `config.example.toml` for each setting.
+Sync speed: use **⚙️ Settings** on the page. It works at once, with no restart.
+
+All other settings are in `~/.config/pr-radar/config.toml`. See `config.example.toml` for each setting.
 After a change, restart PR Radar:
 
 ```bash

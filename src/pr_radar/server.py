@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from pr_radar.github import GitHubError
 from pr_radar.radar import Dashboard, Radar
+from pr_radar.sync import SyncSettings
 
 _STATIC_DIR = Path(__file__).parent / "static"
 ACTION_HEADER = "X-PR-Radar"
@@ -77,6 +78,13 @@ def build_app(radar: Radar) -> FastAPI:
     @app.delete("/api/snooze/{pr_id}")
     async def unsnooze(pr_id: str) -> None:
         radar.unsnooze(pr_id)
+
+    @app.post("/api/settings/sync")
+    async def update_sync(
+        light_check_seconds: int | None = Query(default=None, ge=5, le=3600),
+        full_check_minutes: int | None = Query(default=None, ge=1, le=120),
+    ) -> SyncSettings:
+        return radar.update_sync(light_check_seconds, full_check_minutes)
 
     @app.post("/api/focus")
     async def start_focus(minutes: int = Query(gt=0, le=240)) -> None:

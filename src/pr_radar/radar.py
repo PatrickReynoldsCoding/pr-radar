@@ -22,13 +22,22 @@ from pr_radar.events import (
     prune_snoozes,
     snapshot_of,
 )
-from pr_radar.github import GitHubClient, GitHubError, OpenPrs
+from pr_radar.github import GitHubClient, GitHubError, OpenPrs, fingerprints_of
 from pr_radar.jira import JiraClient, find_issue_keys
 from pr_radar.models import JiraIssue, PullRequest
 from pr_radar.notifier import Notifier
 from pr_radar.reports import Summary, menubar_text, morning_message, reminder_message, summarize, summary_lines, weekly_report_markdown
 from pr_radar.secrets import SecretError
 from pr_radar.store import AppState, StateStore, keep_latest_events
+from pr_radar.sync import (
+    RateBudget,
+    RateLimit,
+    SyncSettings,
+    effective_light_seconds,
+    estimate_points_per_hour,
+    has_changed,
+    is_full_check_due,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +74,12 @@ class Dashboard(BaseModel):
     snoozed_until: dict[str, datetime]
     focus_until: datetime | None
     is_work_time: bool
-    poll_seconds: int
+    sync: SyncSettings
+    light_check_seconds_now: int
+    full_checked_at: datetime | None
+    rate_limit: RateLimit | None
+    budget: RateBudget
+    estimated_points_per_hour: int
 
 
 def utc_now() -> datetime:
@@ -108,37 +122,88 @@ class Radar:
         self._checked_at: datetime | None = None
         self._error: str | None = None
         self._lock = asyncio.Lock()
+        self._wake = asyncio.Event()
+        self._fingerprints: dict[str, str] | None = None
+        self._full_checked_at: datetime | None = None
+        self._rate: RateLimit | None = None
+        self._budget = RateBudget()
 
     @property
     def dashboard_url(self) -> str:
         return f"http://127.0.0.1:{self._config.port}/"
 
+    @property
+    def sync_settings(self) -> SyncSettings:
+        if self._state.sync:
+            return self._state.sync
+        github = self._config.github
+        return SyncSettings(light_check_seconds=github.light_check_seconds, full_check_minutes=github.full_check_minutes)
+
     async def run_forever(self) -> None:
         while True:
-            await self.check()
-            await asyncio.sleep(self._config.github.poll_seconds)
+            await self.tick()
+            await self._sleep(effective_light_seconds(self.sync_settings, self._rate))
+
+    async def _sleep(self, seconds: int) -> None:
+        # A settings change sets the event, so a new speed starts at once and not after the old wait.
+        self._wake.clear()
+        try:
+            await asyncio.wait_for(self._wake.wait(), timeout=seconds)
+        except TimeoutError:
+            pass
+
+    async def tick(self) -> None:
+        """A light check; a full check only when something changed or the safety check is due."""
+        async with self._lock:
+            now = self._clock()
+            if is_full_check_due(self._full_checked_at, now, self.sync_settings, self._rate):
+                await self._full_check(now, "first or safety check")
+                return
+            try:
+                probe = await self._github.fetch_fingerprints()
+            except _CHECK_ERRORS as error:
+                self._record_error(error, now)
+                return
+            self._rate = probe.rate_limit
+            self._budget.light_cost = probe.rate_limit.cost
+            if has_changed(self._fingerprints, probe.by_pr_id):
+                await self._full_check(now, "a PR changed")
+                return
+            self._checked_at = now
+            self._error = None
+            self._send_alerts([], now)
+            self._store.save(self._state)
 
     async def check(self) -> None:
         async with self._lock:
-            now = self._clock()
-            try:
-                open_prs = await self._github.fetch_open_prs()
-            except _CHECK_ERRORS as error:
-                logger.warning("GitHub check failed: %s", error)
-                self._error = str(error) or type(error).__name__
-                self._checked_at = now
-                return
-            tracked = await self._track(open_prs, now)
-            views = sort_views([item.view for item in tracked])
-            events = detect_events(self._state.snapshots, tracked, open_prs.login, now)
-            self._state.snapshots = {item.view.id: snapshot_of(item) for item in tracked}
-            self._state.events = keep_latest_events(self._state.events + events)
-            self._views = views
-            self._login = open_prs.login
-            self._checked_at = now
-            self._error = None
-            self._send_alerts(events, now)
-            self._store.save(self._state)
+            await self._full_check(self._clock(), "sync now")
+
+    def _record_error(self, error: Exception, now: datetime) -> None:
+        logger.warning("GitHub check failed: %s", error)
+        self._error = str(error) or type(error).__name__
+        self._checked_at = now
+
+    async def _full_check(self, now: datetime, reason: str) -> None:
+        logger.info("Full check: %s", reason)
+        try:
+            open_prs = await self._github.fetch_open_prs()
+        except _CHECK_ERRORS as error:
+            self._record_error(error, now)
+            return
+        self._fingerprints = fingerprints_of(open_prs)
+        self._full_checked_at = now
+        self._rate = open_prs.rate_limit
+        self._budget.full_cost = open_prs.rate_limit.cost
+        tracked = await self._track(open_prs, now)
+        events = detect_events(self._state.snapshots, tracked, open_prs.login, now)
+        self._state.snapshots = {item.view.id: snapshot_of(item) for item in tracked}
+        self._state.events = keep_latest_events(self._state.events + events)
+        self._views = sort_views([item.view for item in tracked])
+        self._login = open_prs.login
+        self._checked_at = now
+        self._error = None
+        self._send_alerts(events, now)
+        self._store.save(self._state)
 
     async def _track(self, open_prs: OpenPrs, now: datetime) -> list[TrackedPr]:
         jira_by_key = await self._fetch_jira(open_prs.mine + open_prs.review_requests)
@@ -258,13 +323,20 @@ class Radar:
             snoozed_until={pr_id: until for pr_id, until in self._state.snoozed_until.items() if is_snoozed(pr_id, self._state.snoozed_until, now)},
             focus_until=self._state.focus_until if self._state.focus_until and self._state.focus_until > now else None,
             is_work_time=is_work_time(now.astimezone(), self._config.alerts),
-            poll_seconds=self._config.github.poll_seconds,
+            sync=self.sync_settings,
+            light_check_seconds_now=effective_light_seconds(self.sync_settings, self._rate),
+            full_checked_at=self._full_checked_at,
+            rate_limit=self._rate,
+            budget=self._budget,
+            estimated_points_per_hour=estimate_points_per_hour(self.sync_settings, self._budget),
         )
 
     def menubar(self) -> str:
         if self._checked_at is None:
             return f"📡 …\n---\nChecking GitHub… | href={self.dashboard_url}\n"
-        return menubar_text(self._views, self._state.focus_until, self._error, self.dashboard_url, self._clock())
+        return menubar_text(
+            self._views, self._state.focus_until, self._error, self.dashboard_url, self.sync_settings.light_check_seconds, self._clock()
+        )
 
     async def weekly_report(self) -> str:
         today = date.today()
@@ -285,6 +357,17 @@ class Radar:
     def unsnooze(self, pr_id: str) -> None:
         self._state.snoozed_until.pop(pr_id, None)
         self._store.save(self._state)
+
+    def update_sync(self, light_check_seconds: int | None, full_check_minutes: int | None) -> SyncSettings:
+        current = self.sync_settings
+        updated = SyncSettings(
+            light_check_seconds=light_check_seconds or current.light_check_seconds,
+            full_check_minutes=full_check_minutes or current.full_check_minutes,
+        )
+        self._state.sync = updated
+        self._store.save(self._state)
+        self._wake.set()
+        return updated
 
     def start_focus(self, minutes: int) -> None:
         self._state.focus_until = self._clock() + timedelta(minutes=minutes)

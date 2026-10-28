@@ -24,6 +24,7 @@ def parse(data):
 def test_bot_and_deleted_users_are_named_clearly():
     data = {
         "viewer": {"login": "me"},
+        "rateLimit": {"limit": 5000, "remaining": 4000, "resetAt": "2026-03-02T11:00:00Z", "cost": 104},
         "mine": {"nodes": [raw_pr(None, {"login": "github-actions", "__typename": "Bot"}), {}]},
         "reviews": {"nodes": []},
     }

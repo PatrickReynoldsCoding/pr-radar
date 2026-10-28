@@ -34,6 +34,7 @@ const SUMMARY_CHIPS = [
 ];
 
 let seenEventIds = null;
+let latestDashboard = null;
 
 function el(tag, attributes = {}, children = []) {
   const node = document.createElement(tag);
@@ -224,7 +225,9 @@ function renderBuckets(views, snoozed) {
 function renderStatus(dashboard) {
   const parts = [];
   if (dashboard.login) parts.push(`@${dashboard.login}`);
-  if (dashboard.checked_at) parts.push(`checked ${clockTime(dashboard.checked_at)}`);
+  if (dashboard.checked_at) parts.push(`synced ${clockTime(dashboard.checked_at)}`);
+  parts.push(`every ${dashboard.light_check_seconds_now} s`);
+  if (dashboard.light_check_seconds_now > dashboard.sync.light_check_seconds) parts.push("slowed down: GitHub points are low");
   if (!dashboard.is_work_time) parts.push("outside work hours: Mac alerts are off");
   document.getElementById("status").textContent = parts.join(" · ");
 
@@ -292,6 +295,7 @@ function showToasts(events) {
 }
 
 function render(dashboard) {
+  latestDashboard = dashboard;
   renderStatus(dashboard);
   renderNextUp(dashboard.views, dashboard.snoozed_until, Boolean(dashboard.checked_at));
   renderSummary(dashboard.summary);
@@ -344,6 +348,47 @@ function wireDialogs() {
   });
 }
 
+function pointsEstimate(lightSeconds, fullMinutes, budget) {
+  return Math.round((3600 / lightSeconds) * budget.light_cost + (60 / fullMinutes) * budget.full_cost);
+}
+
+function showEstimate() {
+  const lightSeconds = Number(document.getElementById("light-seconds").value);
+  const fullMinutes = Number(document.getElementById("full-minutes").value);
+  const box = document.getElementById("settings-estimate");
+  if (!lightSeconds || !fullMinutes || !latestDashboard) return;
+  const limit = latestDashboard.rate_limit ? latestDashboard.rate_limit.limit : 5000;
+  const estimate = pointsEstimate(lightSeconds, fullMinutes, latestDashboard.budget);
+  const share = Math.round((estimate / limit) * 100);
+  box.className = `estimate${share > 60 ? " danger" : share > 30 ? " warn" : ""}`;
+  const advice = share > 60 ? " Too fast: GitHub may block your account for the rest of the hour." : "";
+  box.textContent = `About ${estimate.toLocaleString()} of ${limit.toLocaleString()} GitHub points per hour (${share}%), plus a full check for each change.${advice}`;
+}
+
+function wireSettings() {
+  const dialog = document.getElementById("settings-dialog");
+  const lightInput = document.getElementById("light-seconds");
+  const fullInput = document.getElementById("full-minutes");
+  document.getElementById("settings-button").addEventListener("click", () => {
+    lightInput.value = latestDashboard.sync.light_check_seconds;
+    fullInput.value = latestDashboard.sync.full_check_minutes;
+    const rate = latestDashboard.rate_limit;
+    document.getElementById("settings-points").textContent = rate
+      ? `GitHub points left now: ${rate.remaining.toLocaleString()} of ${rate.limit.toLocaleString()}. More come at ${clockTime(rate.reset_at)}.`
+      : "";
+    showEstimate();
+    dialog.showModal();
+  });
+  lightInput.addEventListener("input", showEstimate);
+  fullInput.addEventListener("input", showEstimate);
+  document.getElementById("settings-form").addEventListener("submit", async (submit) => {
+    submit.preventDefault();
+    await api(`/api/settings/sync?light_check_seconds=${lightInput.value}&full_check_minutes=${fullInput.value}`, "POST");
+    dialog.close();
+    await refreshView();
+  });
+}
+
 function wireButtons() {
   const feed = document.getElementById("feed");
   document.getElementById("feed-button").addEventListener("click", () => feed.toggleAttribute("hidden"));
@@ -365,5 +410,6 @@ function wireButtons() {
 
 wireDialogs();
 wireButtons();
+wireSettings();
 refreshView();
 setInterval(refreshView, REFRESH_MS);

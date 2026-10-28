@@ -36,15 +36,23 @@ def test_reminder_message_for_many_prs_is_short():
 
 
 def test_menubar_shows_count_and_escapes_pipes():
-    text = menubar_text(views(), None, None, "http://127.0.0.1:4747/", NOW)
+    text = menubar_text(views(), None, None, "http://127.0.0.1:4747/", 10, NOW)
     lines = text.splitlines()
     assert lines[0] == "🔔 3"
     assert "Fix / pipe" in text
     assert all(line.count("|") <= 1 for line in lines)
 
 
+def test_menubar_has_sync_now_and_speed_choices():
+    lines = menubar_text(views(), None, None, "http://127.0.0.1:4747/", 30, NOW).splitlines()
+    assert any(line.startswith("🔄 Sync now | bash=") and "api/refresh" in line for line in lines)
+    assert "Sync speed: every 30 s" in lines
+    speed_lines = [line for line in lines if line.startswith("--Every")]
+    assert [line.split(" | ")[0] for line in speed_lines] == ["--Every 10 s", "--Every 30 s ✓", "--Every 1 min", "--Every 2 min"]
+
+
 def test_menubar_shows_focus_minutes_left():
-    text = menubar_text(views(), NOW + timedelta(minutes=24, seconds=30), None, "http://127.0.0.1:4747/", NOW)
+    text = menubar_text(views(), NOW + timedelta(minutes=24, seconds=30), None, "http://127.0.0.1:4747/", 10, NOW)
     assert text.splitlines()[0] == "🎯 25m"
 
 

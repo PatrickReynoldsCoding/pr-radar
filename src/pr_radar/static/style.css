@@ -264,6 +264,22 @@ details.group[open] summary { margin-bottom: 12px; }
 
 .footer { text-align: center; color: var(--muted); }
 
+.field { display: flex; flex-direction: column; gap: 2px; margin-bottom: 16px; }
+.field-label { font-weight: 700; }
+.field-help { color: var(--muted); font-size: 0.9rem; }
+.field input {
+  font: inherit;
+  width: 8em;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+.estimate { font-weight: 700; padding: 8px 12px; border-radius: 8px; background: var(--green-soft); color: var(--green); }
+.estimate.warn { background: var(--amber-soft); color: var(--amber); }
+.estimate.danger { background: var(--red-soft); color: var(--red); }
+
 @media (max-width: 640px) {
   .topbar { padding: 10px 16px; }
   .next-up .action { font-size: 1.3rem; }

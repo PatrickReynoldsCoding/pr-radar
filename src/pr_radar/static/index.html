@@ -16,7 +16,8 @@
     <div class="actions">
       <button id="focus-button" class="button" type="button">🎯 Focus</button>
       <button id="report-button" class="button" type="button">📋 Weekly report</button>
-      <button id="refresh-button" class="button" type="button">🔄 Check now</button>
+      <button id="refresh-button" class="button" type="button">🔄 Sync now</button>
+      <button id="settings-button" class="button" type="button">⚙️ Settings</button>
       <button id="feed-button" class="button bell" type="button" aria-label="Updates">
         🔔 <span id="unread" class="badge" hidden>0</span>
       </button>
@@ -82,6 +83,28 @@
       <button id="copy-report" class="button primary" type="button">Copy</button>
       <button class="button" data-close type="button">Close</button>
     </div>
+  </dialog>
+
+  <dialog id="settings-dialog" class="dialog">
+    <h2>⚙️ Sync settings</h2>
+    <form id="settings-form" method="dialog">
+      <label class="field">
+        <span class="field-label">Quick check every (seconds)</span>
+        <span class="field-help">Asks GitHub "did any PR change?". Costs about 1 point.</span>
+        <input id="light-seconds" type="number" min="5" max="3600" step="1" required>
+      </label>
+      <label class="field">
+        <span class="field-label">Full check every (minutes)</span>
+        <span class="field-help">Gets everything, even if nothing seems to change. Also runs at once when a quick check sees a change.</span>
+        <input id="full-minutes" type="number" min="1" max="120" step="1" required>
+      </label>
+      <p id="settings-estimate" class="estimate"></p>
+      <p id="settings-points" class="muted"></p>
+      <div class="dialog-actions">
+        <button class="button primary" type="submit">Save</button>
+        <button class="button" data-close type="button">Cancel</button>
+      </div>
+    </form>
   </dialog>
 
   <script src="/static/app.js"></script>

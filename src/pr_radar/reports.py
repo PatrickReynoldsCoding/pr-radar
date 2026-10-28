@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 from pr_radar.analysis import Bucket, IssueKind, PrView, Role
 from pr_radar.models import ShippedPr, WeeklyActivity
+from pr_radar.sync import MENUBAR_SPEED_CHOICES
 
 _MENUBAR_TITLE_MAX = 60
 
@@ -112,7 +113,37 @@ def _menubar_safe(text: str) -> str:
     return one_line if len(one_line) <= _MENUBAR_TITLE_MAX else one_line[: _MENUBAR_TITLE_MAX - 1] + "…"
 
 
-def menubar_text(views: list[PrView], focus_until: datetime | None, error: str | None, dashboard_url: str, now: datetime) -> str:
+def _speed_label(seconds: int) -> str:
+    return f"{seconds // 60} min" if seconds >= 60 and seconds % 60 == 0 else f"{seconds} s"
+
+
+def _curl_action(label: str, method: str, url: str) -> str:
+    return (
+        f"{label} | bash=/usr/bin/curl param1=-s param2=-H param3=X-PR-Radar:1 param4=-X param5={method} "
+        f"param6={url} terminal=false refresh=true"
+    )
+
+
+def _sync_lines(dashboard_url: str, light_check_seconds: int) -> list[str]:
+    lines = [
+        _curl_action("🔄 Sync now", "POST", f"{dashboard_url}api/refresh"),
+        f"Sync speed: every {_speed_label(light_check_seconds)}",
+    ]
+    for seconds in MENUBAR_SPEED_CHOICES:
+        tick = " ✓" if seconds == light_check_seconds else ""
+        url = f"{dashboard_url}api/settings/sync?light_check_seconds={seconds}"
+        lines.append("--" + _curl_action(f"Every {_speed_label(seconds)}{tick}", "POST", url))
+    return lines
+
+
+def menubar_text(
+    views: list[PrView],
+    focus_until: datetime | None,
+    error: str | None,
+    dashboard_url: str,
+    light_check_seconds: int,
+    now: datetime,
+) -> str:
     summary = summarize(views)
     if error:
         title = "⚠️ PR"
@@ -135,15 +166,11 @@ def menubar_text(views: list[PrView], focus_until: datetime | None, error: str |
         lines.append(f"{icon} {_menubar_safe(view.next_action)} | href={view.url}")
         lines.append(f"--{_menubar_safe(view.repo + '#' + str(view.number) + ' ' + view.title)} | href={view.url}")
     lines.append("---")
+    lines.extend(_sync_lines(dashboard_url, light_check_seconds))
+    lines.append("---")
     focus_url = f"{dashboard_url}api/focus"
     for minutes in (25, 50):
-        lines.append(
-            f"Focus {minutes} min | bash=/usr/bin/curl param1=-s param2=-H param3=X-PR-Radar:1 param4=-X param5=POST "
-            f"param6={focus_url}?minutes={minutes} terminal=false refresh=true"
-        )
+        lines.append(_curl_action(f"Focus {minutes} min", "POST", f"{focus_url}?minutes={minutes}"))
     if focus_until and focus_until > now:
-        lines.append(
-            f"End focus | bash=/usr/bin/curl param1=-s param2=-H param3=X-PR-Radar:1 param4=-X param5=DELETE "
-            f"param6={focus_url} terminal=false refresh=true"
-        )
+        lines.append(_curl_action("End focus", "DELETE", focus_url))
     return "\n".join(lines) + "\n"

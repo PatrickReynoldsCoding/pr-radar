@@ -12,7 +12,8 @@ class GitHubConfig(BaseModel):
     orgs: list[str] = []
     token_command: str = "gh auth token"
     graphql_url: str = "https://api.github.com/graphql"
-    poll_seconds: int = 120
+    light_check_seconds: int = 10
+    full_check_minutes: int = 5
     include_team_review_requests: bool = False
 
 

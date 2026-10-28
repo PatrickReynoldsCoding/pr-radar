@@ -4,6 +4,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from pr_radar.events import Event, PrSnapshot
+from pr_radar.sync import SyncSettings
 
 _MAX_EVENTS = 300
 
@@ -17,6 +18,8 @@ class AppState(BaseModel):
     focus_until: datetime | None = None
     held_messages: list[str] = []
     last_morning_summary: date | None = None
+    # None means: use the speeds from the config file. The Settings panel saves its choice here.
+    sync: SyncSettings | None = None
 
 
 def keep_latest_events(events: list[Event]) -> list[Event]:

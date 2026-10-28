@@ -18,6 +18,7 @@ from pr_radar.models import (
     WeeklyActivity,
 )
 from pr_radar.secrets import read_secret
+from pr_radar.sync import RateLimit
 
 _GHOST_LOGIN = "ghost"
 
@@ -29,15 +30,28 @@ _PR_FIELDS = """
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
   comments(last: 30) { nodes { id author { login __typename } body createdAt url } }
   reviews(last: 30) { nodes { id author { login __typename } state body submittedAt url } }
-  reviewThreads(first: 100) { nodes { id isResolved
-    comments(last: 30) { nodes { id author { login __typename } body createdAt url } } } }
+  reviewThreads(first: 50) { nodes { id isResolved
+    comments(last: 10) { nodes { id author { login __typename } body createdAt url } } } }
 """
+
+_RATE_LIMIT_FIELDS = "rateLimit { limit remaining resetAt cost }"
 
 _OPEN_PRS_QUERY = f"""
 query($mine: String!, $reviews: String!) {{
   viewer {{ login }}
+  {_RATE_LIMIT_FIELDS}
   mine: search(query: $mine, type: ISSUE, first: 50) {{ nodes {{ ... on PullRequest {{ {_PR_FIELDS} }} }} }}
   reviews: search(query: $reviews, type: ISSUE, first: 50) {{ nodes {{ ... on PullRequest {{ {_PR_FIELDS} }} }} }}
+}}
+"""
+
+_FINGERPRINT_FIELDS = "id updatedAt commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }"
+
+_FINGERPRINTS_QUERY = f"""
+query($mine: String!, $reviews: String!) {{
+  {_RATE_LIMIT_FIELDS}
+  mine: search(query: $mine, type: ISSUE, first: 50) {{ nodes {{ ... on PullRequest {{ {_FINGERPRINT_FIELDS} }} }} }}
+  reviews: search(query: $reviews, type: ISSUE, first: 50) {{ nodes {{ ... on PullRequest {{ {_FINGERPRINT_FIELDS} }} }} }}
 }}
 """
 
@@ -56,6 +70,23 @@ class OpenPrs(BaseModel):
     login: str
     mine: list[PullRequest]
     review_requests: list[PullRequest]
+    rate_limit: RateLimit
+
+
+class PrFingerprints(BaseModel):
+    """A cheap summary of each open PR. When it changes, a full check is needed."""
+
+    by_pr_id: dict[str, str]
+    rate_limit: RateLimit
+
+
+def fingerprint(updated_at: datetime, check_state: CheckState | None) -> str:
+    # updatedAt moves on comments, reviews and pushes. Check results do not move it, so add them.
+    return f"{updated_at.isoformat()}|{check_state or ''}"
+
+
+def fingerprints_of(open_prs: OpenPrs) -> dict[str, str]:
+    return {pr.id: fingerprint(pr.updated_at, pr.check_state) for pr in open_prs.mine + open_prs.review_requests}
 
 
 class GitHubError(Exception):
@@ -64,6 +95,8 @@ class GitHubError(Exception):
 
 class GitHubClient(Protocol):
     async def fetch_open_prs(self) -> OpenPrs: ...
+
+    async def fetch_fingerprints(self) -> PrFingerprints: ...
 
     async def fetch_weekly_activity(self, since: date) -> WeeklyActivity: ...
 
@@ -163,8 +196,35 @@ class _Viewer(_Gql):
     login: str
 
 
+class _GqlRateLimit(_Gql):
+    limit: int
+    remaining: int
+    reset_at: datetime
+    cost: int
+
+    def to_rate_limit(self) -> RateLimit:
+        return RateLimit(limit=self.limit, remaining=self.remaining, reset_at=self.reset_at, cost=self.cost)
+
+
+class _GqlFingerprintPr(_Gql):
+    id: str
+    updated_at: datetime
+    commits: _CommitNodes
+
+
+class _FingerprintNodes(_Gql):
+    nodes: list[_GqlFingerprintPr]
+
+
+class _FingerprintsData(_Gql):
+    rate_limit: _GqlRateLimit
+    mine: _FingerprintNodes
+    reviews: _FingerprintNodes
+
+
 class _OpenPrsData(_Gql):
     viewer: _Viewer
+    rate_limit: _GqlRateLimit
     mine: _PrNodes
     reviews: _PrNodes
 
@@ -219,9 +279,12 @@ def _to_thread(raw: _GqlThread) -> ReviewThread:
     )
 
 
+def _check_state(commits: _CommitNodes) -> CheckState | None:
+    rollup = commits.nodes[0].commit.status_check_rollup if commits.nodes else None
+    return rollup.state if rollup else None
+
+
 def _to_pull_request(raw: _GqlPullRequest) -> PullRequest:
-    last_commits = raw.commits.nodes
-    rollup = last_commits[0].commit.status_check_rollup if last_commits else None
     return PullRequest(
         id=raw.id,
         number=raw.number,
@@ -235,7 +298,7 @@ def _to_pull_request(raw: _GqlPullRequest) -> PullRequest:
         head_ref=raw.head_ref_name,
         review_decision=raw.review_decision,
         mergeable=raw.mergeable,
-        check_state=rollup.state if rollup else None,
+        check_state=_check_state(raw.commits),
         comments=[_to_comment(comment) for comment in raw.comments.nodes],
         reviews=[_to_review(review) for review in raw.reviews.nodes],
         threads=[_to_thread(thread) for thread in raw.review_threads.nodes],
@@ -267,18 +330,29 @@ class _GraphQlGitHubClient:
     def __init__(self, config: GitHubConfig) -> None:
         self._config = config
 
-    async def fetch_open_prs(self) -> OpenPrs:
+    def _open_pr_searches(self) -> dict[str, str]:
         review_filter = "review-requested:@me" if self._config.include_team_review_requests else "user-review-requested:@me"
-        variables = {
+        return {
             "mine": search_query("is:pr is:open author:@me", self._config.orgs),
             "reviews": search_query(f"is:pr is:open {review_filter}", self._config.orgs),
         }
-        data = await self._query(_OPEN_PRS_QUERY, variables)
+
+    async def fetch_fingerprints(self) -> PrFingerprints:
+        data = await self._query(_FINGERPRINTS_QUERY, self._open_pr_searches())
+        parsed = _FingerprintsData.model_validate(_clean_search_results(data, ["mine", "reviews"]))
+        by_pr_id: dict[str, str] = {}
+        for raw in parsed.mine.nodes + parsed.reviews.nodes:
+            by_pr_id[raw.id] = fingerprint(raw.updated_at, _check_state(raw.commits))
+        return PrFingerprints(by_pr_id=by_pr_id, rate_limit=parsed.rate_limit.to_rate_limit())
+
+    async def fetch_open_prs(self) -> OpenPrs:
+        data = await self._query(_OPEN_PRS_QUERY, self._open_pr_searches())
         parsed = _OpenPrsData.model_validate(_clean_search_results(data, ["mine", "reviews"]))
         return OpenPrs(
             login=parsed.viewer.login,
             mine=[_to_pull_request(raw) for raw in parsed.mine.nodes],
             review_requests=[_to_pull_request(raw) for raw in parsed.reviews.nodes],
+            rate_limit=parsed.rate_limit.to_rate_limit(),
         )
 
     async def fetch_weekly_activity(self, since: date) -> WeeklyActivity:

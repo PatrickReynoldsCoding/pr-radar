@@ -8,7 +8,10 @@ port = 4747
 orgs = []
 # A command that prints a GitHub token. `gh auth token` uses your GitHub CLI login.
 token_command = "gh auth token"
-poll_seconds = 120
+# Quick check: asks GitHub "did any PR change?" (about 1 point each).
+light_check_seconds = 10
+# Full check: gets everything. Also runs at once when a quick check sees a change.
+full_check_minutes = 5
 # true: also show reviews requested from a team you are in (can be noisy).
 include_team_review_requests = false
 
