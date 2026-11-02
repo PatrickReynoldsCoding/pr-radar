@@ -20,6 +20,8 @@ class AppState(BaseModel):
     last_morning_summary: date | None = None
     # None means: use the speeds from the config file. The Settings panel saves its choice here.
     sync: SyncSettings | None = None
+    # None means: use `realert_minutes` from the config file. The Settings panel saves its choice here.
+    reminder_minutes: int | None = None
 
 
 def keep_latest_events(events: list[Event]) -> list[Event]:

@@ -369,9 +369,11 @@ function wireSettings() {
   const dialog = document.getElementById("settings-dialog");
   const lightInput = document.getElementById("light-seconds");
   const fullInput = document.getElementById("full-minutes");
+  const reminderInput = document.getElementById("reminder-minutes");
   document.getElementById("settings-button").addEventListener("click", () => {
     lightInput.value = latestDashboard.sync.light_check_seconds;
     fullInput.value = latestDashboard.sync.full_check_minutes;
+    reminderInput.value = latestDashboard.reminder_minutes;
     const rate = latestDashboard.rate_limit;
     document.getElementById("settings-points").textContent = rate
       ? `GitHub points left now: ${rate.remaining.toLocaleString()} of ${rate.limit.toLocaleString()}. More come at ${clockTime(rate.reset_at)}.`
@@ -384,6 +386,7 @@ function wireSettings() {
   document.getElementById("settings-form").addEventListener("submit", async (submit) => {
     submit.preventDefault();
     await api(`/api/settings/sync?light_check_seconds=${lightInput.value}&full_check_minutes=${fullInput.value}`, "POST");
+    await api(`/api/settings/reminders?minutes=${reminderInput.value}`, "POST");
     dialog.close();
     await refreshView();
   });

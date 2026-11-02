@@ -138,3 +138,27 @@ def test_new_speed_is_saved_and_survives_a_restart(tmp_path):
     radar.update_sync(light_check_seconds=30, full_check_minutes=None)
     restarted = Radar(radar._config, github, FakeJira(), notifier, StateStore(tmp_path / "state.json"), clock)
     assert (restarted.sync_settings.light_check_seconds, restarted.sync_settings.full_check_minutes) == (30, 5)
+
+
+def test_reminder_minutes_come_from_settings_and_survive_a_restart(tmp_path):
+    radar, github, notifier, clock = build(tmp_path)
+    assert radar.reminder_minutes == Config().alerts.realert_minutes
+    radar.update_reminder_minutes(120)
+    assert radar.dashboard().reminder_minutes == 120
+    restarted, _, _, _ = build(tmp_path)
+    assert restarted.reminder_minutes == 120
+
+
+def test_longer_reminder_time_holds_back_the_reminder(tmp_path):
+    radar, github, notifier, clock = build(tmp_path)
+    asyncio.run(radar.check())
+    add_comment_from_sam(github)
+    clock.now += timedelta(minutes=2)
+    asyncio.run(radar.check())
+    radar.update_reminder_minutes(120)
+    clock.now += timedelta(minutes=60)
+    asyncio.run(radar.check())
+    assert notifier.titles == ["💬 New comment"]
+    clock.now += timedelta(minutes=61)
+    asyncio.run(radar.check())
+    assert notifier.titles == ["💬 New comment", "⏰ Still waiting on you"]

@@ -75,6 +75,7 @@ class Dashboard(BaseModel):
     focus_until: datetime | None
     is_work_time: bool
     sync: SyncSettings
+    reminder_minutes: int
     light_check_seconds_now: int
     full_checked_at: datetime | None
     rate_limit: RateLimit | None
@@ -138,6 +139,12 @@ class Radar:
             return self._state.sync
         github = self._config.github
         return SyncSettings(light_check_seconds=github.light_check_seconds, full_check_minutes=github.full_check_minutes)
+
+    @property
+    def reminder_minutes(self) -> int:
+        if self._state.reminder_minutes:
+            return self._state.reminder_minutes
+        return self._config.alerts.realert_minutes
 
     async def run_forever(self) -> None:
         while True:
@@ -276,7 +283,7 @@ class Radar:
 
     def _send_due_reminders(self, now: datetime) -> None:
         due = due_reminders(
-            self._views, self._state.last_alerted, self._state.snoozed_until, now, self._config.alerts.realert_minutes
+            self._views, self._state.last_alerted, self._state.snoozed_until, now, self.reminder_minutes
         )
         if not due:
             return
@@ -324,6 +331,7 @@ class Radar:
             focus_until=self._state.focus_until if self._state.focus_until and self._state.focus_until > now else None,
             is_work_time=is_work_time(now.astimezone(), self._config.alerts),
             sync=self.sync_settings,
+            reminder_minutes=self.reminder_minutes,
             light_check_seconds_now=effective_light_seconds(self.sync_settings, self._rate),
             full_checked_at=self._full_checked_at,
             rate_limit=self._rate,
@@ -368,6 +376,11 @@ class Radar:
         self._store.save(self._state)
         self._wake.set()
         return updated
+
+    def update_reminder_minutes(self, minutes: int) -> int:
+        self._state.reminder_minutes = minutes
+        self._store.save(self._state)
+        return minutes
 
     def start_focus(self, minutes: int) -> None:
         self._state.focus_until = self._clock() + timedelta(minutes=minutes)

@@ -86,7 +86,7 @@
   </dialog>
 
   <dialog id="settings-dialog" class="dialog">
-    <h2>⚙️ Sync settings</h2>
+    <h2>⚙️ Settings</h2>
     <form id="settings-form" method="dialog">
       <label class="field">
         <span class="field-label">Quick check every (seconds)</span>
@@ -97,6 +97,11 @@
         <span class="field-label">Full check every (minutes)</span>
         <span class="field-help">Gets everything, even if nothing seems to change. Also runs at once when a quick check sees a change.</span>
         <input id="full-minutes" type="number" min="1" max="120" step="1" required>
+      </label>
+      <label class="field">
+        <span class="field-label">Remind me every (minutes)</span>
+        <span class="field-help">A PR that still needs you gets another alert after this time. Snooze a PR to stop its reminders.</span>
+        <input id="reminder-minutes" type="number" min="5" max="1440" step="1" required>
       </label>
       <p id="settings-estimate" class="estimate"></p>
       <p id="settings-points" class="muted"></p>
