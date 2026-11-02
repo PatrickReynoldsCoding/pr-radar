@@ -5,7 +5,7 @@ from builders import ME, NOW, comment, pull_request, thread
 from pr_radar.analysis import analyze_my_pr, analyze_review_request
 from pr_radar.jira import find_issue_keys
 from pr_radar.models import CheckState, ReviewDecision, ShippedPr, WeeklyActivity
-from pr_radar.reports import menubar_text, morning_message, reminder_message, summarize, weekly_report_markdown
+from pr_radar.reports import menubar_text, morning_message, quiet_message, reminder_message, summarize, weekly_report_markdown
 
 
 def views():
@@ -41,6 +41,24 @@ def test_menubar_shows_count_and_escapes_pipes():
     assert lines[0] == "🔔 3"
     assert "Fix / pipe" in text
     assert all(line.count("|") <= 1 for line in lines)
+
+
+def test_menubar_counts_my_open_prs_and_lists_them_in_a_submenu():
+    lines = menubar_text(views(), None, None, "http://127.0.0.1:4747/", 10, NOW).splitlines()
+    count_at = lines.index("📂 3 open PRs")
+    assert lines[count_at + 1 : count_at + 4] == [
+        "--acme/web#7 Add login page | href=https://example.test/pr/A",
+        "--acme/web#7 Fix / pipe | href=https://example.test/pr/B",
+        "--acme/web#7 Add login page | href=https://example.test/pr/C",
+    ]
+    assert not lines[count_at + 4].startswith("--")
+    assert "📂 1 open PR" in menubar_text(views()[:1], None, None, "http://127.0.0.1:4747/", 10, NOW).splitlines()
+
+
+def test_quiet_message_says_how_many_days():
+    quiet = analyze_my_pr(pull_request(updated_minutes_ago=60 * 24 * 6), ME, NOW, 3, [])
+    assert quiet_message([quiet]) == "No activity for 6 days"
+    assert quiet_message([quiet] * 5).splitlines() == ["• 6 days: Add login page"] * 3 + ["…and 2 more"]
 
 
 def test_menubar_has_sync_now_and_speed_choices():

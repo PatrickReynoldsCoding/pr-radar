@@ -8,13 +8,16 @@ from pr_radar.events import (
     EventKind,
     TrackedPr,
     detect_events,
+    due_quiet_alerts,
     due_reminders,
     is_morning_summary_due,
     is_work_time,
     prune_alert_times,
+    prune_quiet_alerts,
     snapshot_of,
 )
 from pr_radar.models import CheckState, ReviewDecision
+from pr_radar.reminders import ReminderSettings
 
 
 def mine(pr):
@@ -23,6 +26,10 @@ def mine(pr):
 
 def review_request(pr):
     return TrackedPr(view=analyze_review_request(pr, NOW, 3, []), pr=pr)
+
+
+def quiet(pr_id, days):
+    return mine(pull_request(pr_id=pr_id, updated_minutes_ago=60 * 24 * days)).view
 
 
 def snapshots(tracked_prs):
@@ -77,25 +84,52 @@ def test_new_review_request_is_an_event():
     assert events[0].message == "sam asked you to review"
 
 
-def test_going_stale_is_an_event_once():
+def test_going_quiet_is_not_a_change_event():
     before = mine(pull_request(updated_minutes_ago=60 * 24 * 2))
     after = mine(pull_request(updated_minutes_ago=60 * 24 * 3))
-    assert event_kinds(detect_events(snapshots([before]), [after], ME, NOW)) == [EventKind.STALE]
-    assert detect_events(snapshots([after]), [after], ME, NOW) == []
+    assert detect_events(snapshots([before]), [after], ME, NOW) == []
+
+
+def test_quiet_alert_is_due_once_per_quiet_period():
+    assert due_quiet_alerts([quiet("A", 3)], {}, {}, NOW) == [quiet("A", 3)]
+    assert due_quiet_alerts([quiet("A", 5)], {"A": 1}, {}, NOW) == []
+    assert due_quiet_alerts([quiet("A", 6)], {"A": 1}, {}, NOW) == [quiet("A", 6)]
+
+
+def test_active_and_snoozed_prs_get_no_quiet_alert():
+    assert due_quiet_alerts([quiet("A", 2)], {}, {}, NOW) == []
+    assert due_quiet_alerts([quiet("A", 3)], {}, {"A": NOW + timedelta(hours=1)}, NOW) == []
+
+
+def test_pr_that_changed_while_radar_was_off_alerts_again():
+    assert due_quiet_alerts([quiet("A", 3)], {"A": 2}, {}, NOW) == [quiet("A", 3)]
+
+
+def test_prune_quiet_forgets_prs_with_new_activity_or_closed():
+    assert prune_quiet_alerts([quiet("A", 1), quiet("B", 4)], {"A": 1, "B": 1, "GONE": 1}) == {"B": 1}
 
 
 def test_reminder_is_due_when_never_alerted_or_after_wait():
     failing = mine(pull_request(pr_id="A", check_state=CheckState.FAILURE)).view
-    assert due_reminders([failing], {}, {}, NOW, 30) == [failing]
-    assert due_reminders([failing], {"A": NOW - timedelta(minutes=10)}, {}, NOW, 30) == []
-    assert due_reminders([failing], {"A": NOW - timedelta(minutes=31)}, {}, NOW, 30) == [failing]
+    settings = ReminderSettings(ci_failed_days=2)
+    assert due_reminders([failing], {}, {}, NOW, settings) == [failing]
+    assert due_reminders([failing], {"A": NOW - timedelta(days=1)}, {}, NOW, settings) == []
+    assert due_reminders([failing], {"A": NOW - timedelta(days=2)}, {}, NOW, settings) == [failing]
+
+
+def test_each_problem_uses_its_own_reminder_time():
+    draft = mine(pull_request(pr_id="D", is_draft=True)).view
+    approved = mine(pull_request(pr_id="E", review_decision=ReviewDecision.APPROVED)).view
+    one_and_a_half_days_ago = {"D": NOW - timedelta(hours=36), "E": NOW - timedelta(hours=36)}
+    due = due_reminders([draft, approved], one_and_a_half_days_ago, {}, NOW, ReminderSettings(draft_days=2, ready_to_merge_days=1))
+    assert due == [approved]
 
 
 def test_snoozed_and_waiting_prs_get_no_reminder():
     failing = mine(pull_request(pr_id="A", check_state=CheckState.FAILURE)).view
     waiting = mine(pull_request(pr_id="B")).view
     snoozes = {"A": NOW + timedelta(hours=1)}
-    assert due_reminders([failing, waiting], {}, snoozes, NOW, 30) == []
+    assert due_reminders([failing, waiting], {}, snoozes, NOW, ReminderSettings()) == []
 
 
 def test_prune_forgets_prs_that_no_longer_need_me():

@@ -16,8 +16,8 @@ It runs on your Mac. It shows a web page, sends Mac alerts that stay on screen, 
   - ⚔️ Merge conflict
   - 🚀 Approved and ready to merge
   - 👀 Someone asked you to review their PR
-  - 💤 Your PR has gone quiet for some days
-- **Reminders.** If a PR still needs you after 30 minutes, you get another alert. Change the time in Settings (or `realert_minutes` in the config). Snooze a PR to stop it.
+  - 💤 A PR has gone quiet for some days. It comes again every few days (set in Settings) until the PR changes.
+- **Reminders.** A PR that still needs you gets another alert after some days. Each problem has its own time (reviews, changes requested, comments, failed checks, conflicts, approved PRs, drafts, quiet PRs). Change them in Settings. Snooze a PR to stop its reminders.
 - **Focus mode.** Hold all alerts for 25, 50 or 90 minutes. You get one summary at the end.
 - **Work hours.** Mac alerts only come on work days, in work hours.
 - **Fast sync that is safe for your GitHub limit.** A quick check every 10 seconds asks "did any PR change?". A full check runs only when something changed, and every 5 minutes as a safety check. Change both speeds in **⚙️ Settings** on the page, or pick a speed in the menu bar under **Sync speed**. The page shows how many GitHub points your choice uses. If points get low, PR Radar slows down by itself.
@@ -25,7 +25,7 @@ It runs on your Mac. It shows a web page, sends Mac alerts that stay on screen, 
 - **Morning summary.** One alert each work day with what needs you today.
 - **Weekly report.** "What I shipped" in Markdown (merged, reviewed, opened, still open). Copy it into your 1:1 notes.
 - **Jira status** next to each PR (optional).
-- **Menu bar icon** (with [SwiftBar](https://github.com/swiftbar/SwiftBar)) with a count, links to each PR and focus buttons.
+- **Menu bar icon** (with [SwiftBar](https://github.com/swiftbar/SwiftBar)) with a count, links to each PR and focus buttons. The menu also shows how many PRs you have open. Point to that line to see all of them.
 
 ## Install
 

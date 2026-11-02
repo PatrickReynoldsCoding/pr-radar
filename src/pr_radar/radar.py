@@ -13,21 +13,34 @@ from pr_radar.events import (
     EventKind,
     TrackedPr,
     detect_events,
+    due_quiet_alerts,
     due_reminders,
     is_morning_summary_due,
     is_snoozed,
     is_work_time,
     needs_realert,
     prune_alert_times,
+    prune_quiet_alerts,
     prune_snoozes,
+    quiet_events,
     snapshot_of,
 )
 from pr_radar.github import GitHubClient, GitHubError, OpenPrs, fingerprints_of
 from pr_radar.jira import JiraClient, find_issue_keys
 from pr_radar.models import JiraIssue, PullRequest
 from pr_radar.notifier import Notifier
-from pr_radar.reports import Summary, menubar_text, morning_message, reminder_message, summarize, summary_lines, weekly_report_markdown
+from pr_radar.reports import (
+    Summary,
+    menubar_text,
+    morning_message,
+    quiet_message,
+    reminder_message,
+    summarize,
+    summary_lines,
+    weekly_report_markdown,
+)
 from pr_radar.secrets import SecretError
+from pr_radar.reminders import ReminderSettings
 from pr_radar.store import AppState, StateStore, keep_latest_events
 from pr_radar.sync import (
     RateBudget,
@@ -75,7 +88,7 @@ class Dashboard(BaseModel):
     focus_until: datetime | None
     is_work_time: bool
     sync: SyncSettings
-    reminder_minutes: int
+    reminders: ReminderSettings
     light_check_seconds_now: int
     full_checked_at: datetime | None
     rate_limit: RateLimit | None
@@ -139,12 +152,6 @@ class Radar:
             return self._state.sync
         github = self._config.github
         return SyncSettings(light_check_seconds=github.light_check_seconds, full_check_minutes=github.full_check_minutes)
-
-    @property
-    def reminder_minutes(self) -> int:
-        if self._state.reminder_minutes:
-            return self._state.reminder_minutes
-        return self._config.alerts.realert_minutes
 
     async def run_forever(self) -> None:
         while True:
@@ -214,7 +221,7 @@ class Radar:
 
     async def _track(self, open_prs: OpenPrs, now: datetime) -> list[TrackedPr]:
         jira_by_key = await self._fetch_jira(open_prs.mine + open_prs.review_requests)
-        stale_days = self._config.alerts.stale_days
+        stale_days = self._state.reminders.quiet_days
         tracked: list[TrackedPr] = []
         for pr in open_prs.mine:
             view = analyze_my_pr(pr, open_prs.login, now, stale_days, self._jira_for(pr, jira_by_key))
@@ -248,6 +255,7 @@ class Radar:
         state = self._state
         state.snoozed_until = prune_snoozes(state.snoozed_until, now)
         state.last_alerted = prune_alert_times(self._views, state.last_alerted)
+        state.quiet_alerted = prune_quiet_alerts(self._views, state.quiet_alerted)
         if state.focus_until and state.focus_until > now:
             state.held_messages.extend(event.message for event in events)
             return
@@ -260,6 +268,7 @@ class Radar:
             self._notify(_event_alert(event))
             state.last_alerted[event.pr_id] = now
         self._send_due_reminders(now)
+        self._send_quiet_alerts(now)
         self._send_morning_summary(now)
 
     def _notify(self, alert: Alert) -> None:
@@ -283,7 +292,7 @@ class Radar:
 
     def _send_due_reminders(self, now: datetime) -> None:
         due = due_reminders(
-            self._views, self._state.last_alerted, self._state.snoozed_until, now, self.reminder_minutes
+            self._views, self._state.last_alerted, self._state.snoozed_until, now, self._state.reminders
         )
         if not due:
             return
@@ -299,6 +308,25 @@ class Radar:
         )
         for view in due:
             self._state.last_alerted[view.id] = now
+
+    def _send_quiet_alerts(self, now: datetime) -> None:
+        # Sent from here and not as a change event, so an alert that falls due at night or in focus time waits and is not lost.
+        due = due_quiet_alerts(self._views, self._state.quiet_alerted, self._state.snoozed_until, now)
+        if not due:
+            return
+        single = len(due) == 1
+        self._notify(
+            Alert(
+                title=_EVENT_TITLES[EventKind.STALE] if single else f"💤 {len(due)} PRs have gone quiet",
+                subtitle=f"{_short_repo(due[0].repo)}: {due[0].title}" if single else "No activity on these PRs",
+                message=quiet_message(due),
+                url=due[0].url if single else self.dashboard_url,
+                group="pr-radar-quiet",
+            )
+        )
+        self._state.events = keep_latest_events(self._state.events + quiet_events(due, now))
+        for view in due:
+            self._state.quiet_alerted[view.id] = view.quiet_periods
 
     def _send_morning_summary(self, now: datetime) -> None:
         local_now = now.astimezone()
@@ -331,7 +359,7 @@ class Radar:
             focus_until=self._state.focus_until if self._state.focus_until and self._state.focus_until > now else None,
             is_work_time=is_work_time(now.astimezone(), self._config.alerts),
             sync=self.sync_settings,
-            reminder_minutes=self.reminder_minutes,
+            reminders=self._state.reminders,
             light_check_seconds_now=effective_light_seconds(self.sync_settings, self._rate),
             full_checked_at=self._full_checked_at,
             rate_limit=self._rate,
@@ -377,10 +405,10 @@ class Radar:
         self._wake.set()
         return updated
 
-    def update_reminder_minutes(self, minutes: int) -> int:
-        self._state.reminder_minutes = minutes
+    def update_reminders(self, reminders: ReminderSettings) -> ReminderSettings:
+        self._state.reminders = reminders
         self._store.save(self._state)
-        return minutes
+        return reminders
 
     def start_focus(self, minutes: int) -> None:
         self._state.focus_until = self._clock() + timedelta(minutes=minutes)

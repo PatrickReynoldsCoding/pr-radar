@@ -72,8 +72,9 @@ function clockTime(isoText) {
   return new Date(isoText).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-async function api(path, method = "GET") {
-  const response = await fetch(path, { method, headers: method === "GET" ? {} : ACTION_HEADERS });
+async function api(path, method = "GET", body = null) {
+  const headers = method === "GET" ? {} : { ...ACTION_HEADERS, ...(body ? { "Content-Type": "application/json" } : {}) };
+  const response = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
   if (!response.ok) throw new Error(`${method} ${path} failed: ${response.status}`);
   const type = response.headers.get("content-type") || "";
   if (type.includes("application/json")) return response.json();
@@ -369,11 +370,11 @@ function wireSettings() {
   const dialog = document.getElementById("settings-dialog");
   const lightInput = document.getElementById("light-seconds");
   const fullInput = document.getElementById("full-minutes");
-  const reminderInput = document.getElementById("reminder-minutes");
+  const reminderInputs = document.querySelectorAll("[data-reminder]");
   document.getElementById("settings-button").addEventListener("click", () => {
     lightInput.value = latestDashboard.sync.light_check_seconds;
     fullInput.value = latestDashboard.sync.full_check_minutes;
-    reminderInput.value = latestDashboard.reminder_minutes;
+    reminderInputs.forEach((input) => (input.value = latestDashboard.reminders[input.dataset.reminder]));
     const rate = latestDashboard.rate_limit;
     document.getElementById("settings-points").textContent = rate
       ? `GitHub points left now: ${rate.remaining.toLocaleString()} of ${rate.limit.toLocaleString()}. More come at ${clockTime(rate.reset_at)}.`
@@ -386,7 +387,8 @@ function wireSettings() {
   document.getElementById("settings-form").addEventListener("submit", async (submit) => {
     submit.preventDefault();
     await api(`/api/settings/sync?light_check_seconds=${lightInput.value}&full_check_minutes=${fullInput.value}`, "POST");
-    await api(`/api/settings/reminders?minutes=${reminderInput.value}`, "POST");
+    const reminders = Object.fromEntries([...reminderInputs].map((input) => [input.dataset.reminder, Number(input.value)]));
+    await api("/api/settings/reminders", "POST", reminders);
     dialog.close();
     await refreshView();
   });

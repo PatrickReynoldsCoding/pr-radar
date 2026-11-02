@@ -18,8 +18,6 @@ class GitHubConfig(BaseModel):
 
 
 class AlertConfig(BaseModel):
-    realert_minutes: int = 30
-    stale_days: int = 3
     work_days: list[int] = [0, 1, 2, 3, 4]
     work_start: time = time(9, 0)
     work_end: time = time(18, 0)

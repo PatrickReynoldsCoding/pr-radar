@@ -78,6 +78,14 @@ def reminder_message(due: list[PrView]) -> str:
     return "\n".join(first_actions + more)
 
 
+def quiet_message(quiet: list[PrView]) -> str:
+    if len(quiet) == 1:
+        return f"No activity for {quiet[0].days_idle} days"
+    first_prs = [f"• {view.days_idle} days: {view.title}" for view in quiet[:3]]
+    more = [f"…and {len(quiet) - 3} more"] if len(quiet) > 3 else []
+    return "\n".join(first_prs + more)
+
+
 def _shipped_lines(prs: list[ShippedPr]) -> list[str]:
     if not prs:
         return ["- None"]
@@ -136,6 +144,14 @@ def _sync_lines(dashboard_url: str, light_check_seconds: int) -> list[str]:
     return lines
 
 
+def _open_pr_lines(views: list[PrView]) -> list[str]:
+    my_prs = [view for view in views if view.role == Role.MINE]
+    lines = [f"📂 {len(my_prs)} open PR{'' if len(my_prs) == 1 else 's'}"]
+    for view in my_prs:
+        lines.append(f"--{_menubar_safe(view.repo + '#' + str(view.number) + ' ' + view.title)} | href={view.url}")
+    return lines
+
+
 def menubar_text(
     views: list[PrView],
     focus_until: datetime | None,
@@ -159,6 +175,7 @@ def menubar_text(
     lines = [title, "---", f"Open PR Radar | href={dashboard_url}"]
     if error:
         lines.append(f"Error: {_menubar_safe(error)}")
+    lines.extend(_open_pr_lines(views))
     for view in views:
         if view.bucket == Bucket.WAITING:
             continue

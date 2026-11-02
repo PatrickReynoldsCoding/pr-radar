@@ -52,10 +52,10 @@ ISSUE_RULES: dict[IssueKind, IssueRule] = {
         priority=5, bucket=Bucket.NEEDS_YOU, template="Fix the merge conflict", realert=True
     ),
     IssueKind.READY_TO_MERGE: IssueRule(
-        priority=6, bucket=Bucket.EASY_WIN, template="Merge it. It is approved", realert=False
+        priority=6, bucket=Bucket.EASY_WIN, template="Merge it. It is approved", realert=True
     ),
     IssueKind.DRAFT: IssueRule(
-        priority=7, bucket=Bucket.NEEDS_YOU, template="Finish the draft and mark it ready for review", realert=False
+        priority=7, bucket=Bucket.NEEDS_YOU, template="Finish the draft and mark it ready for review", realert=True
     ),
     IssueKind.WAITING_FOR_REVIEW: IssueRule(
         priority=8, bucket=Bucket.WAITING, template="Wait for a review, or ask someone to review it", realert=False
@@ -91,6 +91,8 @@ class PrView(BaseModel):
     waiting_comments: list[Comment]
     days_idle: int
     is_stale: bool
+    # How many full `stale_days` have passed with no activity. A "gone quiet" alert is due each time it changes.
+    quiet_periods: int
     jira: list[JiraIssue]
 
     @property
@@ -235,6 +237,7 @@ def _build_view(
         waiting_comments=waiting_comments,
         days_idle=days_idle,
         is_stale=days_idle >= stale_days,
+        quiet_periods=days_idle // stale_days,
         jira=jira,
     )
 

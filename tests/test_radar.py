@@ -7,6 +7,7 @@ from pr_radar.config import AlertConfig, Config
 from pr_radar.github import OpenPrs, PrFingerprints, fingerprints_of
 from pr_radar.models import WeeklyActivity
 from pr_radar.radar import Radar
+from pr_radar.reminders import ReminderSettings
 from pr_radar.store import StateStore
 from pr_radar.sync import RateLimit
 
@@ -73,7 +74,10 @@ def test_new_comment_sends_one_alert_and_no_duplicate_reminder(tmp_path):
     clock.now += timedelta(minutes=2)
     asyncio.run(radar.check())
     assert notifier.titles == ["💬 New comment"]
-    clock.now += timedelta(minutes=31)
+    clock.now += timedelta(hours=23)
+    asyncio.run(radar.check())
+    assert notifier.titles == ["💬 New comment"]
+    clock.now += timedelta(hours=2)
     asyncio.run(radar.check())
     assert notifier.titles == ["💬 New comment", "⏰ Still waiting on you"]
 
@@ -89,6 +93,40 @@ def test_focus_mode_holds_alerts_then_sends_one_summary(tmp_path):
     clock.now += timedelta(minutes=25)
     asyncio.run(radar.check())
     assert notifier.titles == ["🎯 Focus time is done"]
+
+
+def test_quiet_pr_alerts_again_every_stale_days_until_it_changes(tmp_path):
+    radar, github, notifier, clock = build(tmp_path)
+    radar.update_reminders(ReminderSettings(quiet_days=3))
+    asyncio.run(radar.check())
+    for _ in range(4):
+        clock.now += timedelta(days=1)
+        asyncio.run(radar.check())
+    assert notifier.titles == ["💤 PR has gone quiet"]
+    clock.now += timedelta(days=2)
+    asyncio.run(radar.check())
+    assert notifier.titles == ["💤 PR has gone quiet"] * 2
+    github.mine = [pull_request(updated_minutes_ago=-60 * 24 * 6)]
+    asyncio.run(radar.check())
+    clock.now += timedelta(days=2)
+    asyncio.run(radar.check())
+    assert notifier.titles == ["💤 PR has gone quiet"] * 2
+    clock.now += timedelta(days=1)
+    asyncio.run(radar.check())
+    assert notifier.titles == ["💤 PR has gone quiet"] * 3
+
+
+def test_quiet_alert_waits_for_focus_time_to_end(tmp_path):
+    radar, github, notifier, clock = build(tmp_path)
+    radar.update_reminders(ReminderSettings(quiet_days=3))
+    asyncio.run(radar.check())
+    clock.now += timedelta(days=3)
+    radar.start_focus(25)
+    asyncio.run(radar.check())
+    assert notifier.titles == []
+    clock.now += timedelta(minutes=25)
+    asyncio.run(radar.check())
+    assert notifier.titles == ["💤 PR has gone quiet"]
 
 
 def test_state_survives_a_restart(tmp_path):
@@ -140,13 +178,13 @@ def test_new_speed_is_saved_and_survives_a_restart(tmp_path):
     assert (restarted.sync_settings.light_check_seconds, restarted.sync_settings.full_check_minutes) == (30, 5)
 
 
-def test_reminder_minutes_come_from_settings_and_survive_a_restart(tmp_path):
+def test_reminder_settings_default_to_the_chosen_days_and_survive_a_restart(tmp_path):
     radar, github, notifier, clock = build(tmp_path)
-    assert radar.reminder_minutes == Config().alerts.realert_minutes
-    radar.update_reminder_minutes(120)
-    assert radar.dashboard().reminder_minutes == 120
+    assert radar.dashboard().reminders.unreplied_comments_days == 1
+    assert radar.dashboard().reminders.quiet_days == 2
+    radar.update_reminders(ReminderSettings(unreplied_comments_days=3))
     restarted, _, _, _ = build(tmp_path)
-    assert restarted.reminder_minutes == 120
+    assert restarted.dashboard().reminders.unreplied_comments_days == 3
 
 
 def test_longer_reminder_time_holds_back_the_reminder(tmp_path):
@@ -155,10 +193,10 @@ def test_longer_reminder_time_holds_back_the_reminder(tmp_path):
     add_comment_from_sam(github)
     clock.now += timedelta(minutes=2)
     asyncio.run(radar.check())
-    radar.update_reminder_minutes(120)
-    clock.now += timedelta(minutes=60)
+    radar.update_reminders(ReminderSettings(unreplied_comments_days=2, quiet_days=30))
+    clock.now += timedelta(days=1, hours=1)
     asyncio.run(radar.check())
     assert notifier.titles == ["💬 New comment"]
-    clock.now += timedelta(minutes=61)
+    clock.now += timedelta(days=1)
     asyncio.run(radar.check())
     assert notifier.titles == ["💬 New comment", "⏰ Still waiting on you"]

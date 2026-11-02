@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from pr_radar.github import GitHubError
 from pr_radar.radar import Dashboard, Radar
+from pr_radar.reminders import ReminderSettings
 from pr_radar.sync import SyncSettings
 
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -87,8 +88,8 @@ def build_app(radar: Radar) -> FastAPI:
         return radar.update_sync(light_check_seconds, full_check_minutes)
 
     @app.post("/api/settings/reminders")
-    async def update_reminders(minutes: int = Query(ge=5, le=60 * 24)) -> int:
-        return radar.update_reminder_minutes(minutes)
+    async def update_reminders(reminders: ReminderSettings) -> ReminderSettings:
+        return radar.update_reminders(reminders)
 
     @app.post("/api/focus")
     async def start_focus(minutes: int = Query(gt=0, le=240)) -> None:

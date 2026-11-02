@@ -247,7 +247,10 @@ details.group[open] summary { margin-bottom: 12px; }
   color: var(--text);
   padding: 24px;
   max-width: 480px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
 }
+.settings-heading { margin: 20px 0 4px; font-size: 1rem; }
 .dialog.wide { max-width: 760px; width: calc(100vw - 32px); }
 .dialog::backdrop { background: rgb(0 0 0 / 0.4); }
 .dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }

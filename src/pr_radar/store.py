@@ -4,6 +4,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from pr_radar.events import Event, PrSnapshot
+from pr_radar.reminders import ReminderSettings
 from pr_radar.sync import SyncSettings
 
 _MAX_EVENTS = 300
@@ -14,14 +15,15 @@ class AppState(BaseModel):
     snapshots: dict[str, PrSnapshot] | None = None
     events: list[Event] = []
     last_alerted: dict[str, datetime] = {}
+    # The quiet period of each PR at its last "gone quiet" alert.
+    quiet_alerted: dict[str, int] = {}
     snoozed_until: dict[str, datetime] = {}
     focus_until: datetime | None = None
     held_messages: list[str] = []
     last_morning_summary: date | None = None
     # None means: use the speeds from the config file. The Settings panel saves its choice here.
     sync: SyncSettings | None = None
-    # None means: use `realert_minutes` from the config file. The Settings panel saves its choice here.
-    reminder_minutes: int | None = None
+    reminders: ReminderSettings = ReminderSettings()
 
 
 def keep_latest_events(events: list[Event]) -> list[Event]:

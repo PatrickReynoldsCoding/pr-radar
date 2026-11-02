@@ -98,10 +98,39 @@
         <span class="field-help">Gets everything, even if nothing seems to change. Also runs at once when a quick check sees a change.</span>
         <input id="full-minutes" type="number" min="1" max="120" step="1" required>
       </label>
+      <h3 class="settings-heading">Remind me again every (days)</h3>
+      <p class="field-help">Snooze a PR to stop its reminders.</p>
       <label class="field">
-        <span class="field-label">Remind me every (minutes)</span>
-        <span class="field-help">A PR that still needs you gets another alert after this time. Snooze a PR to stop its reminders.</span>
-        <input id="reminder-minutes" type="number" min="5" max="1440" step="1" required>
+        <span class="field-label">Someone asked me to review their PR</span>
+        <input data-reminder="review_requested_days" type="number" min="1" max="30" step="1" required>
+      </label>
+      <label class="field">
+        <span class="field-label">Changes requested on my PR</span>
+        <input data-reminder="changes_requested_days" type="number" min="1" max="30" step="1" required>
+      </label>
+      <label class="field">
+        <span class="field-label">Comments I have not replied to</span>
+        <input data-reminder="unreplied_comments_days" type="number" min="1" max="30" step="1" required>
+      </label>
+      <label class="field">
+        <span class="field-label">Checks failed on my PR</span>
+        <input data-reminder="ci_failed_days" type="number" min="1" max="30" step="1" required>
+      </label>
+      <label class="field">
+        <span class="field-label">Merge conflict on my PR</span>
+        <input data-reminder="merge_conflict_days" type="number" min="1" max="30" step="1" required>
+      </label>
+      <label class="field">
+        <span class="field-label">My PR is approved, not merged</span>
+        <input data-reminder="ready_to_merge_days" type="number" min="1" max="30" step="1" required>
+      </label>
+      <label class="field">
+        <span class="field-label">My draft PR</span>
+        <input data-reminder="draft_days" type="number" min="1" max="30" step="1" required>
+      </label>
+      <label class="field">
+        <span class="field-label">My PR with no activity</span>
+        <input data-reminder="quiet_days" type="number" min="1" max="30" step="1" required>
       </label>
       <p id="settings-estimate" class="estimate"></p>
       <p id="settings-points" class="muted"></p>

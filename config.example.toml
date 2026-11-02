@@ -16,10 +16,7 @@ full_check_minutes = 5
 include_team_review_requests = false
 
 [alerts]
-# Send "still waiting on you" again after this many minutes.
-realert_minutes = 30
-# A PR with no activity for this many days is "gone quiet".
-stale_days = 3
+# How often each reminder comes again is set in the Settings panel of the page, not here.
 # Mac alerts only on these days (0 = Monday) and between these times.
 work_days = [0, 1, 2, 3, 4]
 work_start = 09:00:00

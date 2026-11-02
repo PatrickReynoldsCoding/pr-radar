@@ -1,11 +1,12 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from enum import StrEnum
 
 from pydantic import BaseModel
 
-from pr_radar.analysis import ISSUE_RULES, Bucket, IssueKind, PrView, Role, all_comments, is_bot
+from pr_radar.analysis import ISSUE_RULES, IssueKind, PrView, Role, all_comments, is_bot
 from pr_radar.config import AlertConfig
 from pr_radar.models import Comment, PullRequest
+from pr_radar.reminders import ReminderSettings, reminder_wait
 
 _EXCERPT_LENGTH = 140
 
@@ -32,7 +33,6 @@ class PrSnapshot(BaseModel):
     role: Role
     issue_kinds: list[IssueKind]
     comment_ids: list[str]
-    is_stale: bool
 
 
 class Event(BaseModel):
@@ -57,7 +57,6 @@ def snapshot_of(tracked: TrackedPr) -> PrSnapshot:
         role=tracked.view.role,
         issue_kinds=[issue.kind for issue in tracked.view.issues],
         comment_ids=[comment.id for comment in all_comments(tracked.pr)],
-        is_stale=tracked.view.is_stale,
     )
 
 
@@ -133,9 +132,11 @@ def detect_events(
             continue
         events.extend(_new_comment_events(before, tracked, me, now))
         events.extend(_new_issue_events(before, view, now))
-        if view.is_stale and not before.is_stale:
-            events.append(_event(view, EventKind.STALE, f"No activity for {view.days_idle} days", view.url, now))
     return events
+
+
+def quiet_events(views: list[PrView], now: datetime) -> list[Event]:
+    return [_event(view, EventKind.STALE, f"No activity for {view.days_idle} days", view.url, now) for view in views]
 
 
 def is_snoozed(pr_id: str, snoozed_until: dict[str, datetime], now: datetime) -> bool:
@@ -144,7 +145,7 @@ def is_snoozed(pr_id: str, snoozed_until: dict[str, datetime], now: datetime) ->
 
 
 def needs_realert(view: PrView) -> bool:
-    return view.bucket == Bucket.NEEDS_YOU and ISSUE_RULES[view.top_issue].realert
+    return ISSUE_RULES[view.top_issue].realert
 
 
 def due_reminders(
@@ -152,16 +153,15 @@ def due_reminders(
     last_alerted: dict[str, datetime],
     snoozed_until: dict[str, datetime],
     now: datetime,
-    realert_minutes: int,
+    settings: ReminderSettings,
 ) -> list[PrView]:
-    """PRs that still need you and have not had an alert for `realert_minutes`."""
-    wait = timedelta(minutes=realert_minutes)
+    """PRs that still need you and have not had an alert for the time set for their problem."""
     due: list[PrView] = []
     for view in views:
         if not needs_realert(view) or is_snoozed(view.id, snoozed_until, now):
             continue
         last = last_alerted.get(view.id)
-        if last is None or now - last >= wait:
+        if last is None or now - last >= reminder_wait(settings, view.top_issue):
             due.append(view)
     return due
 
@@ -170,6 +170,29 @@ def prune_alert_times(views: list[PrView], last_alerted: dict[str, datetime]) ->
     """Forgets PRs that no longer need you, so a new problem on them starts a fresh timer."""
     still_needed = {view.id for view in views if needs_realert(view)}
     return {pr_id: at for pr_id, at in last_alerted.items() if pr_id in still_needed}
+
+
+def due_quiet_alerts(
+    views: list[PrView], quiet_alerted: dict[str, int], snoozed_until: dict[str, datetime], now: datetime
+) -> list[PrView]:
+    """Quiet PRs whose quiet period changed since their last "gone quiet" alert.
+
+    The count only goes down when the PR changed, so "changed" (not "went up") also catches a PR
+    that had activity and went quiet again while PR Radar was off.
+    """
+    due: list[PrView] = []
+    for view in views:
+        is_new_period = view.quiet_periods != quiet_alerted.get(view.id)
+        # A draft has its own reminder, so it does not get a second alert for the same days.
+        if view.is_stale and not view.is_draft and is_new_period and not is_snoozed(view.id, snoozed_until, now):
+            due.append(view)
+    return due
+
+
+def prune_quiet_alerts(views: list[PrView], quiet_alerted: dict[str, int]) -> dict[str, int]:
+    """Forgets PRs that had activity or closed, so their next quiet period alerts again."""
+    still_quiet = {view.id for view in views if view.is_stale}
+    return {pr_id: periods for pr_id, periods in quiet_alerted.items() if pr_id in still_quiet}
 
 
 def prune_snoozes(snoozed_until: dict[str, datetime], now: datetime) -> dict[str, datetime]:
