@@ -18,6 +18,7 @@ It runs on your Mac. It shows a web page, sends Mac alerts that stay on screen, 
   - 👀 Someone asked you to review their PR
   - 💤 A PR has gone quiet for some days. It comes again every few days (set in Settings) until the PR changes.
 - **Reminders.** A PR that still needs you gets another alert after some days. Each problem has its own time (reviews, changes requested, comments, failed checks, conflicts, approved PRs, drafts, quiet PRs). Change them in Settings. Snooze a PR to stop its reminders.
+- **Silence a PR.** Click **🔕 Silence** on a PR to stop every alert for it (Mac alerts, reminders, page pop-ups and the morning summary) until you click **Unsilence**. The PR moves to the Silenced group on the page.
 - **Focus mode.** Hold all alerts for 25, 50 or 90 minutes. You get one summary at the end.
 - **Work hours.** Mac alerts only come on work days, in work hours.
 - **Fast sync that is safe for your GitHub limit.** A quick check every 10 seconds asks "did any PR change?". A full check runs only when something changed, and every 5 minutes as a safety check. Change both speeds in **⚙️ Settings** on the page, or pick a speed in the menu bar under **Sync speed**. The page shows how many GitHub points your choice uses. If points get low, PR Radar slows down by itself.
@@ -85,7 +86,7 @@ uv run pytest
 | What | Where |
 |---|---|
 | Your settings | `~/.config/pr-radar/config.toml` |
-| Saved state (alerts, snoozes) | `~/.local/share/pr-radar/state.json` |
+| Saved state (alerts, snoozes, silenced PRs) | `~/.local/share/pr-radar/state.json` |
 | Log | `~/Library/Logs/pr-radar.log` |
 
 ## Privacy and security

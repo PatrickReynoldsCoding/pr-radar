@@ -85,6 +85,7 @@ class Dashboard(BaseModel):
     events: list[Event]
     unread: int
     snoozed_until: dict[str, datetime]
+    silenced: list[str]
     focus_until: datetime | None
     is_work_time: bool
     sync: SyncSettings
@@ -209,7 +210,8 @@ class Radar:
         self._rate = open_prs.rate_limit
         self._budget.full_cost = open_prs.rate_limit.cost
         tracked = await self._track(open_prs, now)
-        events = detect_events(self._state.snapshots, tracked, open_prs.login, now)
+        all_events = detect_events(self._state.snapshots, tracked, open_prs.login, now)
+        events = [event for event in all_events if event.pr_id not in self._state.silenced]
         self._state.snapshots = {item.view.id: snapshot_of(item) for item in tracked}
         self._state.events = keep_latest_events(self._state.events + events)
         self._views = sort_views([item.view for item in tracked])
@@ -271,28 +273,32 @@ class Radar:
         self._send_quiet_alerts(now)
         self._send_morning_summary(now)
 
+    def _alertable_views(self) -> list[PrView]:
+        return [view for view in self._views if view.id not in self._state.silenced]
+
     def _notify(self, alert: Alert) -> None:
         self._notifier.send(alert.title, alert.subtitle, alert.message, alert.url, alert.group)
 
     def _send_focus_done(self, now: datetime) -> None:
         count = len(self._state.held_messages)
+        views = self._alertable_views()
         self._notify(
             Alert(
                 title="🎯 Focus time is done",
                 subtitle=f"{count} update(s) came in while you worked",
-                message=reminder_message([view for view in self._views if needs_realert(view)]) or "Open PR Radar to see them.",
+                message=reminder_message([view for view in views if needs_realert(view)]) or "Open PR Radar to see them.",
                 url=self.dashboard_url,
                 group="pr-radar-focus",
             )
         )
         self._state.held_messages = []
-        for view in self._views:
+        for view in views:
             if needs_realert(view):
                 self._state.last_alerted[view.id] = now
 
     def _send_due_reminders(self, now: datetime) -> None:
         due = due_reminders(
-            self._views, self._state.last_alerted, self._state.snoozed_until, now, self._state.reminders
+            self._alertable_views(), self._state.last_alerted, self._state.snoozed_until, now, self._state.reminders
         )
         if not due:
             return
@@ -311,7 +317,7 @@ class Radar:
 
     def _send_quiet_alerts(self, now: datetime) -> None:
         # Sent from here and not as a change event, so an alert that falls due at night or in focus time waits and is not lost.
-        due = due_quiet_alerts(self._views, self._state.quiet_alerted, self._state.snoozed_until, now)
+        due = due_quiet_alerts(self._alertable_views(), self._state.quiet_alerted, self._state.snoozed_until, now)
         if not due:
             return
         single = len(due) == 1
@@ -336,7 +342,7 @@ class Radar:
             Alert(
                 title="☀️ Good morning",
                 subtitle="Your PRs today",
-                message=morning_message(summarize(self._views)),
+                message=morning_message(summarize(self._alertable_views())),
                 url=self.dashboard_url,
                 group="pr-radar-morning",
             )
@@ -356,6 +362,7 @@ class Radar:
             events=self._state.events[:100],
             unread=sum(1 for event in self._state.events if not event.read),
             snoozed_until={pr_id: until for pr_id, until in self._state.snoozed_until.items() if is_snoozed(pr_id, self._state.snoozed_until, now)},
+            silenced=sorted(self._state.silenced),
             focus_until=self._state.focus_until if self._state.focus_until and self._state.focus_until > now else None,
             is_work_time=is_work_time(now.astimezone(), self._config.alerts),
             sync=self.sync_settings,
@@ -392,6 +399,14 @@ class Radar:
 
     def unsnooze(self, pr_id: str) -> None:
         self._state.snoozed_until.pop(pr_id, None)
+        self._store.save(self._state)
+
+    def silence(self, pr_id: str) -> None:
+        self._state.silenced.add(pr_id)
+        self._store.save(self._state)
+
+    def unsilence(self, pr_id: str) -> None:
+        self._state.silenced.discard(pr_id)
         self._store.save(self._state)
 
     def update_sync(self, light_check_seconds: int | None, full_check_minutes: int | None) -> SyncSettings:

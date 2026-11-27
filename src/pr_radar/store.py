@@ -18,6 +18,8 @@ class AppState(BaseModel):
     # The quiet period of each PR at its last "gone quiet" alert.
     quiet_alerted: dict[str, int] = {}
     snoozed_until: dict[str, datetime] = {}
+    # Silenced PRs never send an alert, until they are unsilenced.
+    silenced: set[str] = set()
     focus_until: datetime | None = None
     held_messages: list[str] = []
     last_morning_summary: date | None = None

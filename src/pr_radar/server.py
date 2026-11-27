@@ -80,6 +80,14 @@ def build_app(radar: Radar) -> FastAPI:
     async def unsnooze(pr_id: str) -> None:
         radar.unsnooze(pr_id)
 
+    @app.post("/api/silence/{pr_id}")
+    async def silence(pr_id: str) -> None:
+        radar.silence(pr_id)
+
+    @app.delete("/api/silence/{pr_id}")
+    async def unsilence(pr_id: str) -> None:
+        radar.unsilence(pr_id)
+
     @app.post("/api/settings/sync")
     async def update_sync(
         light_check_seconds: int | None = Query(default=None, ge=5, le=3600),

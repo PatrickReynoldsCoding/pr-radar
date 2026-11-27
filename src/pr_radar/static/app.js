@@ -148,9 +148,25 @@ function waitingComments(view) {
   return el("ul", { className: "comments" }, items);
 }
 
-function card(view, snoozedUntil) {
+function actionButton(text, path, method) {
+  return el("button", {
+    className: "button small",
+    type: "button",
+    text,
+    onclick: async () => {
+      await api(path, method);
+      await refreshView();
+    },
+  });
+}
+
+function card(view, snoozedUntil, isSilenced) {
   const buttons = [externalLink(view.url, "Open PR ↗", "button small primary")];
-  if (snoozedUntil) {
+  const silencePath = `/api/silence/${encodeURIComponent(view.id)}`;
+  if (isSilenced) {
+    buttons.push(el("span", { className: "muted", text: "🔕 Silenced: no alerts" }));
+    buttons.push(actionButton("Unsilence", silencePath, "DELETE"));
+  } else if (snoozedUntil) {
     buttons.push(el("span", { className: "muted", text: `Snoozed until ${new Date(snoozedUntil).toLocaleString()}` }));
     buttons.push(
       el("button", {
@@ -166,6 +182,7 @@ function card(view, snoozedUntil) {
   } else if (view.bucket === "needs_you") {
     buttons.push(snoozeMenu(view));
   }
+  if (!isSilenced) buttons.push(actionButton("🔕 Silence", silencePath, "POST"));
   return el("article", { className: `card ${view.bucket}` }, [
     el("div", { className: "action", text: view.next_action }),
     el("div", { className: "title" }, externalLink(view.url, view.title)),
@@ -175,13 +192,13 @@ function card(view, snoozedUntil) {
   ]);
 }
 
-function renderNextUp(views, snoozed, hasChecked) {
+function renderNextUp(views, snoozed, silenced, hasChecked) {
   const box = document.getElementById("next-up");
   if (!hasChecked) {
     box.replaceChildren(el("div", { className: "action", text: "📡 Checking GitHub…" }));
     return;
   }
-  const active = views.filter((view) => !snoozed[view.id]);
+  const active = views.filter((view) => !snoozed[view.id] && !silenced.has(view.id));
   const next = active.find((view) => view.bucket === "needs_you") || active.find((view) => view.bucket === "easy_win");
   box.replaceChildren();
   box.classList.toggle("done", !next);
@@ -209,17 +226,23 @@ function renderSummary(summary) {
   document.getElementById("summary").replaceChildren(...chips);
 }
 
-function renderBuckets(views, snoozed) {
-  const buckets = { needs_you: [], easy_win: [], waiting: [], snoozed: [] };
+function bucketOf(view, snoozed, silenced) {
+  if (silenced.has(view.id)) return "silenced";
+  if (snoozed[view.id]) return "snoozed";
+  return view.bucket;
+}
+
+function renderBuckets(views, snoozed, silenced) {
+  const buckets = { needs_you: [], easy_win: [], waiting: [], snoozed: [], silenced: [] };
   for (const view of views) {
-    const key = snoozed[view.id] ? "snoozed" : view.bucket;
-    buckets[key].push(card(view, snoozed[view.id]));
+    buckets[bucketOf(view, snoozed, silenced)].push(card(view, snoozed[view.id], silenced.has(view.id)));
   }
   for (const [key, cards] of Object.entries(buckets)) {
     const container = document.getElementById(`bucket-${key}`);
     container.replaceChildren(...(cards.length ? cards : [el("div", { className: "empty", text: "Nothing here 👌" })]));
   }
   document.getElementById("snoozed-group").hidden = buckets.snoozed.length === 0;
+  document.getElementById("silenced-group").hidden = buckets.silenced.length === 0;
   document.getElementById("waiting-count").textContent = `(${buckets.waiting.length})`;
 }
 
@@ -298,9 +321,10 @@ function showToasts(events) {
 function render(dashboard) {
   latestDashboard = dashboard;
   renderStatus(dashboard);
-  renderNextUp(dashboard.views, dashboard.snoozed_until, Boolean(dashboard.checked_at));
+  const silenced = new Set(dashboard.silenced);
+  renderNextUp(dashboard.views, dashboard.snoozed_until, silenced, Boolean(dashboard.checked_at));
   renderSummary(dashboard.summary);
-  renderBuckets(dashboard.views, dashboard.snoozed_until);
+  renderBuckets(dashboard.views, dashboard.snoozed_until, silenced);
   renderFeed(dashboard.events);
   showToasts(dashboard.events);
 }

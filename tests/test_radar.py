@@ -200,3 +200,26 @@ def test_longer_reminder_time_holds_back_the_reminder(tmp_path):
     clock.now += timedelta(days=1)
     asyncio.run(radar.check())
     assert notifier.titles == ["💬 New comment", "⏰ Still waiting on you"]
+
+
+def test_silenced_pr_sends_no_alerts_until_unsilenced(tmp_path):
+    radar, github, notifier, clock = build(tmp_path)
+    asyncio.run(radar.check())
+    radar.silence(radar.dashboard().views[0].id)
+    add_comment_from_sam(github)
+    clock.now += timedelta(minutes=2)
+    asyncio.run(radar.check())
+    clock.now += timedelta(hours=30)
+    asyncio.run(radar.check())
+    assert notifier.titles == []
+    assert radar.dashboard().events == []
+    radar.unsilence(radar.dashboard().views[0].id)
+    asyncio.run(radar.check())
+    assert notifier.titles == ["⏰ Still waiting on you"]
+
+
+def test_silence_survives_a_restart(tmp_path):
+    radar, github, notifier, clock = build(tmp_path)
+    radar.silence("PR_1")
+    restarted = Radar(radar._config, github, FakeJira(), notifier, StateStore(tmp_path / "state.json"), clock)
+    assert restarted.dashboard().silenced == ["PR_1"]
